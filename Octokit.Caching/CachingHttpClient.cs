@@ -1,60 +1,71 @@
-﻿using System;
+﻿using Octokit.Internal;
+using System;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Octokit.Internal;
 
 namespace Octokit.Caching
 {
-    public class CachingHttpClient : IHttpClient
-    {
-        private readonly IHttpClient httpClient;
-        private readonly ICache cache;
+	public class CachingHttpClient : IHttpClient
+	{
+		private readonly IHttpClient httpClient;
 
-        public CachingHttpClient(IHttpClient httpClient, ICache cache)
-        {
-            this.httpClient = httpClient;
-            this.cache = cache;
-        }
+		private readonly ICache cache;
 
-        public async Task<IResponse> Send(IRequest request, CancellationToken cancellationToken)
-        {
-            if (request.Method != HttpMethod.Get)
-                return await httpClient.Send(request, cancellationToken);
+		public CachingHttpClient(IHttpClient httpClient, ICache cache)
+		{
+			this.httpClient = httpClient;
+			this.cache = cache;
+		}
 
-            var key = request.Endpoint.ToString();
+		public virtual void Dispose()
+		{
+			httpClient.Dispose();
+		}
 
-            var response = await cache.GetAsync<IResponse>(key);
+		public virtual async Task<IResponse> Send(IRequest request, CancellationToken cancellationToken)
+		{
+			if (request.Method != HttpMethod.Get)
+				return await httpClient.Send(request, cancellationToken);
 
-            if (response == null)
-            {
-                response = await httpClient.Send(request, cancellationToken);
+			var key = request.Endpoint.ToString();
 
-                await cache.SetAsync(key, response);
+			var response = await cache.GetAsync<IResponse>(key);
 
-                return response;
-            }
+			if (response == null)
+			{
+				response = await httpClient.Send(request, cancellationToken);
 
-            if (!String.IsNullOrEmpty(response.ApiInfo.Etag))
-            {
-                request.Headers["If-None-Match"] = response.ApiInfo.Etag;
+				await cache.SetAsync(key, response);
 
-                var conditionalResponse = await httpClient.Send(request, cancellationToken);
+				return response;
+			}
 
-                if (conditionalResponse.StatusCode == HttpStatusCode.NotModified)
-                    return response;
+			if (!String.IsNullOrEmpty(response.ApiInfo.Etag))
+			{
+				request.Headers["If-None-Match"] = response.ApiInfo.Etag;
 
-                await cache.SetAsync(key, conditionalResponse);
+				var conditionalResponse = await httpClient.Send(request, cancellationToken);
 
-                return conditionalResponse;
-            }
+				if (conditionalResponse.StatusCode == HttpStatusCode.NotModified)
+					return response;
 
-            response = await httpClient.Send(request, cancellationToken);
+				await cache.SetAsync(key, conditionalResponse);
 
-            await cache.SetAsync(key, response);
+				return conditionalResponse;
+			}
 
-            return response;
-        }
-    }
+			response = await httpClient.Send(request, cancellationToken);
+
+			await cache.SetAsync(key, response);
+
+			return response;
+		}
+
+		public virtual void SetRequestTimeout(TimeSpan timeout)
+		{
+			httpClient.SetRequestTimeout(timeout);
+		}
+	}
 }

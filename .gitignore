@@ -175,3 +175,4 @@ FakesAssemblies/
 
 # Packages for export
 /tools/nuget/*.nupkg
+/.vs/Octokit.Caching/v15/Server/sqlite3
